@@ -5,5 +5,5 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY handler.py .
 
-EXPOSE 8880 8000  # Kokoro + RunPod ports
+EXPOSE 8880 8000  
 CMD ["python", "-u", "handler.py"]
