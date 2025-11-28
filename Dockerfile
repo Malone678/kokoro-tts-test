@@ -1,26 +1,20 @@
 FROM ghcr.io/remsky/kokoro-fastapi-gpu:latest
 
-# Switch to root so we can install packages
+# Install system deps for pip3 (fixes "pip not found" and PEP 668)
 USER root
+RUN apt-get update && apt-get install -y --no-install-recommends python3-pip git curl && \
+    rm -rf /var/lib/apt/lists/* && \
+    ln -sf /usr/bin/python3 /usr/bin/python && \
+    ln -sf /usr/bin/pip3 /usr/bin/pip
 
-# The remsky image has Python 3.10 but NO pip and NO git → install them
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends python3-pip git && \
-    rm -rf /var/lib/apt/lists/*
+# Install RunPod SDK (no-cache to avoid cache issues)
+RUN pip install --no-cache-dir --break-system-packages runpod==0.8.0
 
-# Install runpod using pip3 (pip does not exist yet)
-RUN pip3 install --no-cache-dir runpod==0.8.0
-
-# Switch back to the non-root user that the base image expects
-# (this is important – otherwise uvicorn will refuse to start)
-USER appuser
-
-# Your proxy handler
+# Copy the proxy handler
 WORKDIR /app
 COPY handler.py .
 
-# Only expose the RunPod port (Kokoro server stays internal on 8880)
 EXPOSE 8000
 
-# Start Kokoro server first (background), wait a few seconds, then start your handler
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port 8880 & sleep 12 && python -u handler.py"]
+# Start Kokoro FastAPI server in background (port 8880), wait 8 sec, then handler
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port 8880 & sleep 8 && python -u handler.py"]
