@@ -1,17 +1,18 @@
 FROM ghcr.io/remsky/kokoro-fastapi-gpu:latest
 
-# Switch to root so we can install packages
+# Install system deps for pip3 (fixes "pip not found" and PEP 668)
 USER root
+RUN apt-get update && apt-get install -y --no-install-recommends python3-pip git curl && \
+    rm -rf /var/lib/apt/lists/* && \
+    ln -sf /usr/bin/python3 /usr/bin/python && \
+    ln -sf /usr/bin/pip3 /usr/bin/pip
 
-# The base image already has python3 and pip3 globally — just install runpod
-RUN pip3 install --no-cache-dir runpod==0.8.0
+# Install RunPod SDK (no-cache to avoid cache issues)
+RUN pip install --no-cache-dir --break-system-packages runpod==0.8.0
 
-# Copy your handler
+# Copy the proxy handler
 WORKDIR /app
 COPY handler.py .
 
-# Run as the original non-root user (optional but clean)
-# USER 1000   # <-- uncomment if you want non-root (works either way)
-
-EXPOSE 8880 8000
+EXPOSE 8000
 CMD ["python", "-u", "handler.py"]
