@@ -1,42 +1,28 @@
 import runpod
-import json
 import requests
-from pydantic import BaseModel
-
-class TTSRequest(BaseModel):
-    text: str  # Your 15-min script here
-    voice: str = "af_bella"  # Default voice
-    speed: float = 1.0
-
-def generate_tts(text: str, voice: str = "af_bella", speed: float = 1.0) -> bytes:
-    # Internal call to Kokoro endpoint (runs on same container)
-    payload = {
-        "model": "kokoro",
-        "input": text,
-        "voice": voice,
-        "response_format": "mp3",
-        "speed": speed
-    }
-    response = requests.post("http://localhost:8880/v1/audio/speech", json=payload)
-    response.raise_for_status()
-    return response.content  # MP3 bytes
+import base64
+import json
 
 def handler(event):
-    try:
-        data = json.loads(event['input'])
-        req = TTSRequest(**data)
-        audio_bytes = generate_tts(req.text, req.voice, req.speed)
-        # Return base64 or direct bytes; for test, return success
-        return {
-            "output": {
-                "status": "success",
-                "audio_length_bytes": len(audio_bytes),
-                "message": "15-min audio generated!"
-            },
-            "delay_time": 0  # For async
+    input_data = event['input']
+    tts_payload = {
+        "model": "kokoro",
+        "input": input_data.get('text', ''),
+        "voice": input_data.get('voice', 'af_bella'),
+        "speed": input_data.get('speed', 1.0),
+        "response_format": "mp3"
+    }
+    # Proxy to remsy's baked FastAPI endpoint (runs on localhost:8880)
+    response = requests.post("http://localhost:8880/v1/audio/speech", json=tts_payload)
+    response.raise_for_status()
+    audio_bytes = response.content
+    audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+    return {
+        "output": {
+            "status": "success",
+            "audio_b64": audio_b64,
+            "length_bytes": len(audio_bytes)
         }
-    except Exception as e:
-        return {"output": {"error": str(e)}, "delay_time": 0}
+    }
 
-# Start serverless
 runpod.serverless.start({"handler": handler})
