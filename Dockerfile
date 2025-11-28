@@ -1,18 +1,16 @@
 FROM ghcr.io/remsky/kokoro-fastapi-gpu:latest
 
-# Install system deps if needed (base has Python/pip)
+# Switch to root to install packages (required for this base image)
 USER root
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3-pip \
-    && rm -rf /var/lib/apt/lists/*
 
+# Upgrade pip and install our deps (force break PEP 668 – safe in container)
+RUN python -m pip install --upgrade pip && \
+    pip install --no-cache-dir runpod requests fastapi uvicorn pydantic --break-system-packages
+
+# Copy our handler
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
 COPY handler.py .
 
-# Switch back to non-root for security (matches base)
-USER appuser  # Or whatever non-root user base uses; fallback to root if error
-
+# Stay as root (Kokoro image works fine as root in serverless)
 EXPOSE 8880 8000
 CMD ["python", "-u", "handler.py"]
