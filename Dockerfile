@@ -1,6 +1,7 @@
 FROM ghcr.io/remsky/kokoro-fastapi-gpu:latest
 
 # Install system deps for pip3 (fixes "pip not found" and PEP 668)
+# It seems these might already be in the base image, but it's safe to keep for compatibility.
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends python3-pip git curl && \
     rm -rf /var/lib/apt/lists/* && \
@@ -8,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3-pip git
     ln -sf /usr/bin/pip3 /usr/bin/pip
 
 # Install RunPod SDK (no-cache to avoid cache issues)
+# Using --break-system-packages is necessary in newer Debian/Ubuntu images
 RUN pip install --no-cache-dir --break-system-packages runpod==0.8.0
 
 # Copy the proxy handler
@@ -16,5 +18,5 @@ COPY handler.py .
 
 EXPOSE 8000
 
-# Start Kokoro FastAPI server in background (port 8880), wait 8 sec, then handler
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port 8880 & sleep 8 && python -u handler.py"]
+# Start ONLY the handler. The handler.py script manages the FastAPI server internally.
+CMD ["python", "-u", "handler.py"]
