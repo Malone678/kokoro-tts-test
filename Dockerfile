@@ -7,12 +7,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3-pip git
     ln -sf /usr/bin/python3 /usr/bin/python && \
     ln -sf /usr/bin/pip3 /usr/bin/pip
 
-# Install RunPod SDK (no-cache to avoid cache issues)
+# Install RunPod SDK
 RUN pip install --no-cache-dir --break-system-packages runpod==0.8.0
 
 # Copy the proxy handler
 WORKDIR /app
 COPY handler.py .
 
-EXPOSE 8000
-CMD ["python", "-u", "handler.py"]
+# Start Kokoro FastAPI server in background (port 8880), then your handler (port 8000)
+EXPOSE 8880 8000
+CMD ["sh", "-c", "python -m uvicorn main:app --host 0.0.0.0 --port 8880 & sleep 5 && python -u handler.py"]
