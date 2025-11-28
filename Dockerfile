@@ -1,16 +1,15 @@
 FROM ghcr.io/remsky/kokoro-fastapi-gpu:latest
 
-# Switch to root to install packages (required for this base image)
+# Switch to root and unblock pip (fixes PEP 668 / externally-managed error)
 USER root
+RUN rm -f /usr/lib/python3.*/EXTERNALLY-MANAGED
 
-# Upgrade pip and install our deps (force break PEP 668 – safe in container)
-RUN python -m pip install --upgrade pip && \
-    pip install --no-cache-dir runpod requests fastapi uvicorn pydantic --break-system-packages
+# Install deps (no requirements.txt needed – direct for faster build)
+RUN pip install --no-cache-dir runpod==0.8.0 requests==2.32.3 fastapi==0.115.0 uvicorn==0.30.6 pydantic==2.9.2
 
-# Copy our handler
+# Copy handler
 WORKDIR /app
 COPY handler.py .
 
-# Stay as root (Kokoro image works fine as root in serverless)
 EXPOSE 8880 8000
 CMD ["python", "-u", "handler.py"]
