@@ -2,58 +2,53 @@ import runpod
 import base64
 import os
 import sys
-import logging  # For RunPod-visible logs
 
-# Setup RunPod logger (logs show in dashboard!)
-runpod_logger = runpod.Logger()  # This is key—plain print() won't appear
+# This is the ONLY logger that actually appears in RunPod's Logs tab
+logger = runpod.Logger()
 
-# Try to add paths (your original attempts)
-sys.path.append(os.path.join(os.getcwd(), 'api', 'src'))
-sys.path.append(os.path.join(os.getcwd(), 'src'))  # Fallback for inference dir
+# Add the correct path so Python can find inference/kokoro_v1.py
+sys.path.append(os.path.join(os.getcwd(), "api", "src"))
 
-# Global model (lazy-load on first request)
-model_backend = None
+# Global model — lazy loaded
+model = None
 
 def load_model():
-    global model_backend
-    if model_backend is None:
+    global model
+    if model is None:
+        logger.info("Starting Kokoro model load...")
         try:
-            runpod_logger.info("Starting KokoroV1 model load...")
-            from inference.kokoro_v1 import KokoroV1  # Your import
-            model_backend = KokoroV1()
-            runpod_logger.info("Model loaded successfully!")
-        except ImportError as ie:
-            runpod_logger.error(f"Import error: {ie}")
-            raise
+            from inference.kokoro_v1 import KokoroV1
+            model = KokoroV1()
+            logger.info("Kokoro model loaded successfully!")
         except Exception as e:
-            runpod_logger.error(f"Model init failed: {e}")
-            raise
-    return model_backend
+            logger.error(f"MODEL LOAD FAILED: {str(e)}")
+            raise  # This will bubble up and be caught in handler()
+    return model
 
-def handler(event):
+def handler(job):
     try:
-        runpod_logger.info("Handler started")
-        input_data = event['input']
-        text = input_data.get('text', '')
-        voice = input_data.get('voice', 'af_bella')
-        speed = input_data.get('speed', 1.0)
+        job_input = job["input"]
+        text = job_input.get("text", "").strip()
+        voice = job_input.get("voice", "af_bella")
+        speed = float(job_input.get("speed", 1.0))
 
-        if not text.strip():
-            return {"error": "Missing or empty 'text' in input"}
+        if not text:
+            return {"error": "No text provided"}
 
-        # Load model if not already
-        model_backend = load_model()
+        logger.info(f"Request → text: '{text[:60]}...' | voice: {voice} | speed: {speed}")
 
-        # Generate audio
-        runpod_logger.info(f"Generating audio for text: {text[:50]}...")
-        audio_bytes = model_backend.generate_audio_bytes(
+        kokoro = load_model()
+
+        audio_bytes = kokoro.generate_audio_bytes(
             text=text,
             voice=voice,
             speed=speed,
             response_format="mp3"
         )
-        audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
-        runpod_logger.info("Audio generated successfully")
+
+        audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+
+        logger.info(f"Success! Audio length: {len(audio_bytes)} bytes")
         return {
             "output": {
                 "status": "success",
@@ -61,9 +56,13 @@ def handler(event):
                 "length_bytes": len(audio_bytes)
             }
         }
-    except Exception as e:
-        runpod_logger.error(f"Handler error: {str(e)}")
-        return {"error": str(e)}  # Graceful fail—job marks as FAILED but logs the why
 
-# Start the serverless worker
+    # ←←← THIS IS THE IMPORTANT PART YOU ASKED FOR ←←←
+    except Exception as e:
+        error_msg = f"HANDLER CRASHED → {type(e).__name__}: {str(e)}"
+        logger.error(error_msg)
+        # This return makes the job show as FAILED (red) but with your exact error message
+        return {"error": error_msg}
+
+# Start serverless worker
 runpod.serverless.start({"handler": handler})
