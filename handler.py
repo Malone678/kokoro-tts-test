@@ -1,10 +1,17 @@
 import runpod
 import base64
-# You would import the function/class here from the remsky library/code
-# Example: from remsky_model import generate_speech 
+import os
+import sys
 
-# Definte the actual function call logic here instead of the requests.post
-# def generate_speech(text, voice, speed): ...
+# Add the 'src' directory to the Python path so we can import internal modules
+sys.path.append(os.path.join(os.getcwd(), 'api', 'src'))
+
+# Import the necessary backend class directly from the pre-baked image's code
+from inference.kokoro_v1 import KokoroV1 
+
+# Initialize the model backend once globally, outside the handler function
+# This is crucial for GPU apps to load the model just once during cold start.
+model_backend = KokoroV1() 
 
 def handler(event):
     input_data = event['input']
@@ -12,13 +19,15 @@ def handler(event):
     voice = input_data.get('voice', 'af_bella')
     speed = input_data.get('speed', 1.0)
     
-    # !!! YOU NEED TO REPLACE THIS LINE WITH THE ACTUAL FUNCTION CALL !!!
-    # Example: audio_bytes = generate_speech(text, voice, speed)
-    # The current requests.post logic must be removed.
-    response = requests.post("http://localhost:8880/v1/audio/speech", json={...})
-    response.raise_for_status()
-    audio_bytes = response.content
-    
+    # Call the internal Python function directly, no requests.post needed
+    # The generate_audio_bytes function handles the TTS generation
+    audio_bytes = model_backend.generate_audio_bytes(
+        text=text, 
+        voice=voice, 
+        speed=speed,
+        response_format="mp3"
+    )
+
     audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
     return {
         "output": {
@@ -28,4 +37,5 @@ def handler(event):
         }
     }
 
+# This starts the RunPod serverless worker.
 runpod.serverless.start({"handler": handler})
