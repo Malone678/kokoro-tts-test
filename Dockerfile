@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3-pip && 
 
 # 2. Install runpod into the existing uv-managed virtual environment using uv (not pip!)
 RUN . /app/.venv/bin/activate && \
-    uv pip install --no-cache runpod==0.8.0
+    uv pip install --no-cache runpod
 
 WORKDIR /app
 COPY handler.py .
