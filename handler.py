@@ -4,7 +4,7 @@ import os
 import traceback
 import base64
 
-# Force immediate printing
+# Force immediate printing (shows up instantly in RunPod logs)
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
@@ -12,13 +12,13 @@ print("=== handler.py STARTED ===")
 print(f"CWD: {os.getcwd()}")
 print(f"Files in /app: {os.listdir('/app')}")
 
-# Add the correct path
+# Add the correct path so absolute imports work
 sys.path.insert(0, os.path.join(os.getcwd(), "api", "src"))
 print("Added /app/api/src to sys.path")
 
 try:
     import runpod
-    from runpod import RunPodLogger  # Correct for latest runpod (1.x)
+    from runpod import RunPodLogger
     log = RunPodLogger()
     print("runpod imported successfully")
     log.info("RunPod Logger ready")
@@ -26,6 +26,7 @@ except Exception as e:
     print(f"RUNPOD IMPORT FAILED: {str(e)}")
     sys.exit(1)
 
+# Global model (lazy-loaded)
 model = None
 
 def load_model():
@@ -34,7 +35,7 @@ def load_model():
         print("Loading Kokoro model...")
         log.info("Model load start")
         try:
-            # Absolute import that works in RunPod serverless
+            # Absolute import — fixes the relative import error
             from api.src.inference.kokoro_v1 import KokoroV1
             model = KokoroV1()
             print("Kokoro model loaded!")
@@ -58,15 +59,22 @@ def handler(job):
         if not text:
             return {"error": "No text provided"}
 
-        log.info(f"TTS request: {text[:60]}... voice={voice}")
+        log.info(f"TTS request: {text[:60]}... voice={voice} speed={speed}")
 
         kokoro = load_model()
-        audio_bytes = kokoro.generate_audio_bytes(
-            text=text, voice=voice, speed=speed, response_format="mp3"
+
+        # ←←← THIS IS THE ONLY METHOD THAT EXISTS NOW ←←←
+        audio_bytes = kokoro.generate(
+            text=text,
+            voice=voice,
+            speed=speed,
+            format="mp3"          # parameter is 'format', not 'response_format'
         )
+        # ←←← END OF CHANGE ←←←
+
         audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
 
-        log.info(f"Generated {len(audio_bytes)} bytes")
+        log.info(f"Generated {len(audio_bytes)} bytes of audio")
         return {
             "output": {
                 "status": "success",
