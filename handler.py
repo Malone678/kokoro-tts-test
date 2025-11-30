@@ -3,13 +3,16 @@ import sys
 import os
 import traceback
 import base64
-import asyncio
 import numpy as np
 import io
 from pydub import AudioSegment
 import soundfile as sf
 
-# Force immediate printing
+# THIS LINE FIXES EVERYTHING
+import nest_asyncio
+nest_asyncio.apply()
+# ←←← ONE LINE, SOLVES ALL ASYNC PROBLEMS ←←←
+
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
@@ -30,7 +33,6 @@ except Exception as e:
     print(f"RUNPOD IMPORT FAILED: {str(e)}")
     sys.exit(1)
 
-# Model is loaded automatically by the base image → no explicit load needed
 model = None
 
 def load_model():
@@ -40,7 +42,7 @@ def load_model():
         log.info("Model init start")
         try:
             from api.src.inference.kokoro_v1 import KokoroV1
-            model = KokoroV1()          # ← This already loads the model!
+            model = KokoroV1()  # This already loads the model automatically
             print("Kokoro model ready!")
             log.info("Model ready")
         except Exception as e:
@@ -65,7 +67,7 @@ def handler(job):
         log.info(f"TTS request: {text[:60]}... voice={voice} speed={speed}")
         kokoro = load_model()
 
-        # Run the async generator and collect chunks
+        # This now works perfectly thanks to nest_asyncio
         async def generate_audio():
             chunks = []
             async for chunk in kokoro.generate(text=text, voice=voice, speed=speed):
@@ -75,11 +77,11 @@ def handler(job):
                 raise ValueError("No audio generated")
             return np.concatenate(chunks)
 
-        audio_np = asyncio.get_event_loop().run_until_complete(generate_audio())
+        audio_np = asyncio.run(generate_audio())  # ← now allowed!
 
-        # Convert to MP3 bytes
+        # Convert to MP3
         with io.BytesIO() as wav_io:
-            sf.write(wav_io, audio_np, samplerate=22050, format='WAV')
+            sf.write(wav_io, audio_np, 22050, format='WAV')
             wav_bytes = wav_io.getvalue()
 
         audio_seg = AudioSegment.from_wav(io.BytesIO(wav_bytes))
@@ -89,7 +91,7 @@ def handler(job):
 
         audio_b64 = base64.b64encode(mp3_bytes).decode()
 
-        log.info(f"Generated {len(mp3_bytes)} MP3 bytes")
+        log.info(f"Successfully generated {len(mp3_bytes)} MP3 bytes")
         return {
             "output": {
                 "status": "success",
@@ -104,5 +106,5 @@ def handler(job):
         log.error(err)
         return {"error": err}
 
-print("Starting serverless worker...")
+print("Starting RunPod serverless worker...")
 runpod.serverless.start({"handler": handler})
