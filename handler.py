@@ -39,15 +39,17 @@ model = None
 def load_model():
     global model
     if model is None:
-        print("Initializing Kokoro model (pre-loaded by base image)...")
-        log.info("Model init start")
+        print("Initializing and loading Kokoro model...")
+        log.info("Model load start")
         try:
             from api.src.inference.kokoro_v1 import KokoroV1
-            model = KokoroV1()  # This already loads the model automatically
-            print("Kokoro model ready!")
-            log.info("Model ready")
+            model = KokoroV1()
+            # ←←← THIS LINE LOADS THE ACTUAL MODEL ←←←
+            asyncio.run(model.load_model("/app/models/kokoro-v1.0"))
+            print("Kokoro model fully loaded from disk!")
+            log.info("Model fully loaded")
         except Exception as e:
-            err = f"MODEL INIT FAILED: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
+            err = f"MODEL LOAD FAILED: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
             print(err)
             log.error(err)
             raise
