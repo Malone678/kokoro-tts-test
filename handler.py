@@ -18,12 +18,12 @@ print("Added /app/api/src to sys.path")
 
 try:
     import runpod
-    from runpod import RunPodLogger  # ← Correct import for 0.8.0
+    from runpod import RunPodLogger  # Correct for latest runpod (1.x)
     log = RunPodLogger()
     print("runpod imported successfully")
     log.info("RunPod Logger ready")
 except Exception as e:
-    print(f"RUNPOD IMPORT FAILED: {e}")
+    print(f"RUNPOD IMPORT FAILED: {str(e)}")
     sys.exit(1)
 
 model = None
@@ -34,12 +34,12 @@ def load_model():
         print("Loading Kokoro model...")
         log.info("Model load start")
         try:
-            from inference.kokoro_v1 import KokoroV1
+            from inference.kokoro_v1 import KokoroV1  # We'll fix this next based on logs
             model = KokoroV1()
             print("Kokoro model loaded!")
             log.info("Model loaded")
         except Exception as e:
-            err = f"MODEL LOAD FAILED: {type(e).__name__}: {e}\n{traceback.format_exc()}"
+            err = f"MODEL LOAD FAILED: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
             print(err)
             log.error(err)
             raise
@@ -75,7 +75,7 @@ def handler(job):
         }
 
     except Exception as e:
-        err = f"HANDLER ERROR: {type(e).__name__}: {e}\n{traceback.format_exc()}"
+        err = f"HANDLER ERROR: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
         print(err)
         log.error(err)
         return {"error": err}
