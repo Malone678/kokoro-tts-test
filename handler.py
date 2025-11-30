@@ -18,7 +18,8 @@ print("Added /app/api/src to sys.path")
 
 try:
     import runpod
-    log = runpod.Logger()  # ← CORRECT for runpod==0.8.0
+    from runpod import RunPodLogger  # ← Correct import for 0.8.0
+    log = RunPodLogger()
     print("runpod imported successfully")
     log.info("RunPod Logger ready")
 except Exception as e:
