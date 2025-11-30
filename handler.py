@@ -34,10 +34,11 @@ def load_model():
         print("Loading Kokoro model...")
         log.info("Model load start")
         try:
-            from inference.kokoro_v1 import KokoroV1  # We'll fix this next based on logs
+            # Absolute import that works in RunPod serverless
+            from api.src.inference.kokoro_v1 import KokoroV1
             model = KokoroV1()
             print("Kokoro model loaded!")
-            log.info("Model loaded")
+            log.info("Model loaded successfully")
         except Exception as e:
             err = f"MODEL LOAD FAILED: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
             print(err)
