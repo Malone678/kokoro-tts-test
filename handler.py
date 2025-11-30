@@ -45,7 +45,7 @@ def load_model():
             from api.src.inference.kokoro_v1 import KokoroV1
             model = KokoroV1()
             # ONLY CHANGE IN THE ENTIRE FILE — THIS IS WHAT YOU ASKED FOR
-            asyncio.run(model.load_model("models/v1_0"))
+            asyncio.run(model.load_model("/app/api/src/models/v1_0"))
             print("Kokoro model loaded successfully!")
             log.info("Model loaded")
         except Exception as e:
