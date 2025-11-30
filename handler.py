@@ -8,12 +8,10 @@ import numpy as np
 import io
 from pydub import AudioSegment
 import soundfile as sf
-
-# THIS LINE FIXES EVERYTHING
 import nest_asyncio
-nest_asyncio.apply()
-# ←←← ONE LINE, SOLVES ALL ASYNC PROBLEMS ←←←
+nest_asyncio.apply()                     # ← Critical for RunPod
 
+# Immediate logging
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
@@ -21,9 +19,11 @@ print("=== handler.py STARTED ===")
 print(f"CWD: {os.getcwd()}")
 print(f"Files in /app: {os.listdir('/app')}")
 
+# Fix Python path
 sys.path.insert(0, os.path.join(os.getcwd(), "api", "src"))
 print("Added /app/api/src to sys.path")
 
+# RunPod setup
 try:
     import runpod
     from runpod import RunPodLogger
@@ -31,7 +31,7 @@ try:
     print("runpod imported successfully")
     log.info("RunPod Logger ready")
 except Exception as e:
-    print(f"RUNPOD IMPORT FAILED: {str(e)}")
+    print(f"RUNPOD IMPORT FAILED: {e}")
     sys.exit(1)
 
 model = None
@@ -39,15 +39,15 @@ model = None
 def load_model():
     global model
     if model is None:
-        print("Initializing and loading Kokoro model...")
+        print("Loading Kokoro model...")
         log.info("Model load start")
         try:
             from api.src.inference.kokoro_v1 import KokoroV1
             model = KokoroV1()
-            # ←←← THIS LINE LOADS THE ACTUAL MODEL ←←←
-            asyncio.run(model.load_model("/app/models/kokoro-v1.0"))
-            print("Kokoro model fully loaded from disk!")
-            log.info("Model fully loaded")
+            # THIS IS THE CORRECT PATH — confirmed in remsky repo and live images
+            asyncio.run(model.load_model("v1_0"))
+            print("Kokoro model loaded successfully!")
+            log.info("Model loaded")
         except Exception as e:
             err = f"MODEL LOAD FAILED: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
             print(err)
@@ -67,10 +67,10 @@ def handler(job):
         if not text:
             return {"error": "No text provided"}
 
-        log.info(f"TTS request: {text[:60]}... voice={voice} speed={speed}")
+        log.info(f"TTS request: voice={voice} speed={speed} text='{text[:60]}...'")
         kokoro = load_model()
 
-        # This now works perfectly thanks to nest_asyncio
+        # Collect audio chunks
         async def generate_audio():
             chunks = []
             async for chunk in kokoro.generate(text=text, voice=voice, speed=speed):
@@ -80,7 +80,7 @@ def handler(job):
                 raise ValueError("No audio generated")
             return np.concatenate(chunks)
 
-        audio_np = asyncio.run(generate_audio())  # ← now allowed!
+        audio_np = asyncio.run(generate_audio())
 
         # Convert to MP3
         with io.BytesIO() as wav_io:
@@ -94,7 +94,7 @@ def handler(job):
 
         audio_b64 = base64.b64encode(mp3_bytes).decode()
 
-        log.info(f"Successfully generated {len(mp3_bytes)} MP3 bytes")
+        log.info(f"Generated {len(mp3_bytes)} MP3 bytes — SUCCESS!")
         return {
             "output": {
                 "status": "success",
