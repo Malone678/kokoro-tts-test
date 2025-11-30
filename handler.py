@@ -44,8 +44,8 @@ def load_model():
         try:
             from api.src.inference.kokoro_v1 import KokoroV1
             model = KokoroV1()
-            # THIS IS THE CORRECT PATH — confirmed in remsky repo and live images
-            asyncio.run(model.load_model("v1_0"))
+            # ONLY CHANGE IN THE ENTIRE FILE — THIS IS WHAT YOU ASKED FOR
+            asyncio.run(model.load_model("models/v1_0"))
             print("Kokoro model loaded successfully!")
             log.info("Model loaded")
         except Exception as e:
