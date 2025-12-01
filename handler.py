@@ -19,11 +19,7 @@ print("=== handler.py STARTED ===")
 print(f"CWD: {os.getcwd()}")
 print(f"Files in /app: {os.listdir('/app')}")
 
-# ←←← REMOVED THIS LINE — breaks relative imports when PYTHONPATH is set
-# sys.path.insert(0, os.path.join(os.getcwd(), "api", "src"))
-# print("Added /app/api/src to sys.path")
-
-# ←←← NEW LINE — tell user we rely on RunPod env var
+# Rely on PYTHONPATH=/app:/app/api from RunPod environment variables
 print("Relying on PYTHONPATH=/app:/app/api from RunPod environment variables")
 
 # RunPod setup
@@ -47,7 +43,7 @@ def load_model():
         try:
             from api.src.inference.kokoro_v1 import KokoroV1
             model = KokoroV1()
-            # ←←← THIS IS THE CORRECT AND ONLY STRING THAT WORKS IN THE BASE IMAGE
+            # Explicitly load the model file using the absolute path
             asyncio.run(model.load_model("/app/api/src/models/v1_0/kokoro-v1_0.pth"))
             print("Kokoro model loaded successfully!")
             log.info("Model loaded")
@@ -64,17 +60,26 @@ def handler(job):
     try:
         inp = job["input"]
         text = inp.get("text", "").strip()
-        voice = inp.get("voice", "af_bella")
+        
+        # --- FIX FOR VOICE LOADING: Construct the correct absolute path ---
+        voice_name = inp.get("voice", "af_bella")
+        # Path confirmed to be /app/api/src/voices/v1_0/
+        voice_path = f"/app/api/src/voices/v1_0/{voice_name}.pt"
+        voice = voice_path
+        # --- END FIX ---
+        
         speed = float(inp.get("speed", 1.0))
 
         if not text:
             return {"error": "No text provided"}
 
+        # Log the voice path used
         log.info(f"TTS request: voice={voice} speed={speed} text='{text[:60]}...'")
         kokoro = load_model()
 
         async def generate_audio():
             chunks = []
+            # Pass the absolute 'voice' path
             async for chunk in kokoro.generate(text=text, voice=voice, speed=speed):
                 if chunk.audio is not None:
                     chunks.append(chunk.audio)
@@ -110,5 +115,5 @@ def handler(job):
         log.error(err)
         return {"error": err}
 
-print(" karaoke Starting RunPod serverless worker...")
+print("Starting RunPod serverless worker...")
 runpod.serverless.start({"handler": handler})
