@@ -11,18 +11,31 @@ import soundfile as sf
 import nest_asyncio
 import re
 import tempfile # Needed to create a temporary directory path
+
 nest_asyncio.apply()                     # ← Critical for RunPod
 
-# ... (omitted imports and logging setup for brevity) ...
+# Immediate logging
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
 
-# RunPod setup (omitted for brevity)
+print("=== handler.py STARTED ===")
+print(f"CWD: {os.getcwd()}")
+print(f"Files in /app: {os.listdir('/app')}")
+
+# Rely on PYTHONPATH=/app:/app/api from RunPod environment variables
+print("Relying on PYTHONPATH=/app:/app/api from RunPod environment variables")
+
+# RunPod setup
 try:
     import runpod
     from runpod import RunPodLogger
     log = RunPodLogger()
-    # ... (omitted) ...
+    print("runpod imported successfully")
+    log.info("RunPod Logger ready")
 except Exception as e:
-    # ... (omitted) ...
+    # This block was empty and causing the error
+    print(f"RUNPOD IMPORT FAILED: {e}")
+    sys.exit(1)
 
 # Model management is handled by the service now, so no global model variable or load_model function is needed.
 
@@ -45,7 +58,6 @@ def handler(job):
         from api.src.services.tts_service import TTSService
         from api.src.services.streaming_audio_writer import StreamingAudioWriter
         
-        # Instantiate the service directly.
         # We must await the 'create' method first to initialize managers
         initialized_service = asyncio.run(TTSService.create())
         
@@ -70,16 +82,16 @@ def handler(job):
             
             if not all_chunks:
                 raise ValueError("No audio generated from the service.")
+            # The service returns float32 audio, convert to int16 for standard WAV/MP3 conversion
             return np.concatenate(all_chunks)
 
         # Call the new async function that uses the service manager
         audio_np = asyncio.run(generate_audio_stream_long_form_service())
         # --- END SERVICE CALL ---
 
-        # ... (rest of MP3 conversion and return statement) ...
+        # The service returns float32 audio, convert to int16 for standard WAV/MP3 conversion
+        # We use soundfile's 'subtype' parameter to control this
         with io.BytesIO() as wav_io:
-            # The service returns float32 audio, convert to int16 for standard WAV/MP3 conversion
-            # We use soundfile's 'subtype' parameter to control this
             sf.write(wav_io, audio_np, 22050, format='WAV', subtype='PCM_16')
             wav_bytes = wav_io.getvalue()
 
@@ -107,5 +119,3 @@ def handler(job):
 
 print("Starting RunPod serverless worker...")
 runpod.serverless.start({"handler": handler})
-
-
