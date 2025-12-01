@@ -9,6 +9,8 @@ import io
 from pydub import AudioSegment
 import soundfile as sf
 import nest_asyncio
+import re # We still need regex for potential simple splitting if service fails
+
 nest_asyncio.apply()                     # ← Critical for RunPod
 
 # Immediate logging
@@ -33,26 +35,7 @@ except Exception as e:
     print(f"RUNPOD IMPORT FAILED: {e}")
     sys.exit(1)
 
-model = None
-
-def load_model():
-    global model
-    if model is None:
-        print("Loading Kokoro model...")
-        log.info("Model load start")
-        try:
-            from api.src.inference.kokoro_v1 import KokoroV1
-            model = KokoroV1()
-            # Explicitly load the model file using the absolute path
-            asyncio.run(model.load_model("/app/api/src/models/v1_0/kokoro-v1_0.pth"))
-            print("Kokoro model loaded successfully!")
-            log.info("Model loaded")
-        except Exception as e:
-            err = f"MODEL LOAD FAILED: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
-            print(err)
-            log.error(err)
-            raise
-    return model
+# Model management is handled by the service now, so no global model variable or load_model function is needed.
 
 def handler(job):
     print("Handler called")
@@ -60,42 +43,50 @@ def handler(job):
     try:
         inp = job["input"]
         text = inp.get("text", "").strip()
-        
-        # --- FIX FOR VOICE LOADING: Construct the correct absolute path ---
         voice_name = inp.get("voice", "af_bella")
-        # Path confirmed to be /app/api/src/voices/v1_0/
-        voice_path = f"/app/api/src/voices/v1_0/{voice_name}.pt"
-        voice = voice_path
-        # --- END FIX ---
-        
         speed = float(inp.get("speed", 1.0))
 
         if not text:
             return {"error": "No text provided"}
-            
-        # --- DEBUGGING LOG ADDED HERE ---
-        # Log the length of the text received by the handler
+
         log.info(f"Received text length: {len(text)} characters.")
-        # --- END DEBUGGING LOG ---
+        log.info(f"TTS request initiated for voice={voice_name} speed={speed}")
 
-        # Log the voice path used
-        log.info(f"TTS request: voice={voice} speed={speed} text='{text[:60]}...'")
-        kokoro = load_model()
+        # --- USE THE CORRECT SERVICE FOR LONG FORM ---
+        from api.src.services.tts_service import TTSService
+        
+        # Instantiate the service directly.
+        tts_service = TTSService()
 
-        async def generate_audio():
-            chunks = []
-            # Pass the absolute 'voice' path
-            async for chunk in kokoro.generate(text=text, voice=voice, speed=speed):
+        async def generate_audio_stream_long_form_service():
+            all_chunks = []
+            # This function uses the repo's built-in logic for smart_split and voice path resolution
+            # We must await the 'create' method first to initialize managers
+            initialized_service = await TTSService.create()
+            
+            # The generate_audio_stream handles all chunking internally
+            async for chunk in initialized_service.generate_audio_stream(
+                text=text, 
+                voice=voice_name, # Pass the name, the service resolves the path
+                speed=speed,
+                output_format=None # None means return raw audio chunks for local assembly
+            ):
                 if chunk.audio is not None:
-                    chunks.append(chunk.audio)
-            if not chunks:
-                raise ValueError("No audio generated")
-            return np.concatenate(chunks)
+                    all_chunks.append(chunk.audio)
+            
+            if not all_chunks:
+                raise ValueError("No audio generated from the service.")
+            return np.concatenate(all_chunks)
 
-        audio_np = asyncio.run(generate_audio())
+        # Call the new async function that uses the service manager
+        audio_np = asyncio.run(generate_audio_stream_long_form_service())
+        # --- END SERVICE CALL ---
 
+        # ... (rest of MP3 conversion and return statement) ...
         with io.BytesIO() as wav_io:
-            sf.write(wav_io, audio_np, 22050, format='WAV')
+            # The service returns float32 audio, convert to int16 for standard WAV/MP3 conversion
+            # We use soundfile's 'subtype' parameter to control this
+            sf.write(wav_io, audio_np, 22050, format='WAV', subtype='PCM_16')
             wav_bytes = wav_io.getvalue()
 
         audio_seg = AudioSegment.from_wav(io.BytesIO(wav_bytes))
@@ -105,7 +96,6 @@ def handler(job):
 
         audio_b64 = base64.b64encode(mp3_bytes).decode()
 
-        # Log the final MP3 byte count
         log.info(f"Generated {len(mp3_bytes)} MP3 bytes — SUCCESS!")
         return {
             "output": {
@@ -123,3 +113,4 @@ def handler(job):
 
 print("Starting RunPod serverless worker...")
 runpod.serverless.start({"handler": handler})
+
