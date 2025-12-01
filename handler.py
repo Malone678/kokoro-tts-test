@@ -19,9 +19,12 @@ print("=== handler.py STARTED ===")
 print(f"CWD: {os.getcwd()}")
 print(f"Files in /app: {os.listdir('/app')}")
 
-# Fix Python path
-sys.path.insert(0, os.path.join(os.getcwd(), "api", "src"))
-print("Added /app/api/src to sys.path")
+# ←←← REMOVED THIS LINE — breaks relative imports when PYTHONPATH is set
+# sys.path.insert(0, os.path.join(os.getcwd(), "api", "src"))
+# print("Added /app/api/src to sys.path")
+
+# ←←← NEW LINE — tell user we rely on RunPod env var
+print("Relying on PYTHONPATH=/app:/app/api from RunPod environment variables")
 
 # RunPod setup
 try:
@@ -36,7 +39,6 @@ except Exception as e:
 
 model = None
 
-            
 def load_model():
     global model
     if model is None:
@@ -45,8 +47,8 @@ def load_model():
         try:
             from api.src.inference.kokoro_v1 import KokoroV1
             model = KokoroV1()
-            # ONLY CHANGE IN THE ENTIRE FILE — THIS IS WHAT YOU ASKED FOR
-            asyncio.run(model.load_model("/app/api/src/models"))
+            # ←←← THIS IS THE CORRECT AND ONLY STRING THAT WORKS IN THE BASE IMAGE
+            asyncio.run(model.load_model("v1_0"))
             print("Kokoro model loaded successfully!")
             log.info("Model loaded")
         except Exception as e:
@@ -71,7 +73,6 @@ def handler(job):
         log.info(f"TTS request: voice={voice} speed={speed} text='{text[:60]}...'")
         kokoro = load_model()
 
-        # Collect audio chunks
         async def generate_audio():
             chunks = []
             async for chunk in kokoro.generate(text=text, voice=voice, speed=speed):
@@ -83,7 +84,6 @@ def handler(job):
 
         audio_np = asyncio.run(generate_audio())
 
-        # Convert to MP3
         with io.BytesIO() as wav_io:
             sf.write(wav_io, audio_np, 22050, format='WAV')
             wav_bytes = wav_io.getvalue()
@@ -110,5 +110,5 @@ def handler(job):
         log.error(err)
         return {"error": err}
 
-print("Starting RunPod serverless worker...")
+print(" karaoke Starting RunPod serverless worker...")
 runpod.serverless.start({"handler": handler})
