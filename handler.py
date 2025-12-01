@@ -72,6 +72,11 @@ def handler(job):
 
         if not text:
             return {"error": "No text provided"}
+            
+        # --- DEBUGGING LOG ADDED HERE ---
+        # Log the length of the text received by the handler
+        log.info(f"Received text length: {len(text)} characters.")
+        # --- END DEBUGGING LOG ---
 
         # Log the voice path used
         log.info(f"TTS request: voice={voice} speed={speed} text='{text[:60]}...'")
@@ -100,6 +105,7 @@ def handler(job):
 
         audio_b64 = base64.b64encode(mp3_bytes).decode()
 
+        # Log the final MP3 byte count
         log.info(f"Generated {len(mp3_bytes)} MP3 bytes — SUCCESS!")
         return {
             "output": {
