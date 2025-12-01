@@ -36,6 +36,20 @@ except Exception as e:
 
 model = None
 
+            print("=== FINAL DEBUG — SHOW ME WHAT REALLY EXISTS ===")
+            models_dir = "/app/api/src/models"
+            print(f"Does {models_dir} exist? {os.path.exists(models_dir)}")
+            if os.path.exists(models_dir):
+                contents = os.listdir(models_dir)
+                print(f"Contents of {models_dir}: {contents}")
+                for item in contents:
+                    full_path = os.path.join(models_dir, item)
+                    if os.path.isdir(full_path):
+                        print(f"  → Inside '{item}': {os.listdir(full_path)}")
+                    else:
+                        print(f"  → File: {item}")
+            print("=== END DEBUG ===")
+
 def load_model():
     global model
     if model is None:
