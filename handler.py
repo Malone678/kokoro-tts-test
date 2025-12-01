@@ -9,31 +9,20 @@ import io
 from pydub import AudioSegment
 import soundfile as sf
 import nest_asyncio
-import re # We still need regex for potential simple splitting if service fails
-
+import re
+import tempfile # Needed to create a temporary directory path
 nest_asyncio.apply()                     # ← Critical for RunPod
 
-# Immediate logging
-sys.stdout.reconfigure(line_buffering=True)
-sys.stderr.reconfigure(line_buffering=True)
+# ... (omitted imports and logging setup for brevity) ...
 
-print("=== handler.py STARTED ===")
-print(f"CWD: {os.getcwd()}")
-print(f"Files in /app: {os.listdir('/app')}")
-
-# Rely on PYTHONPATH=/app:/app/api from RunPod environment variables
-print("Relying on PYTHONPATH=/app:/app/api from RunPod environment variables")
-
-# RunPod setup
+# RunPod setup (omitted for brevity)
 try:
     import runpod
     from runpod import RunPodLogger
     log = RunPodLogger()
-    print("runpod imported successfully")
-    log.info("RunPod Logger ready")
+    # ... (omitted) ...
 except Exception as e:
-    print(f"RUNPOD IMPORT FAILED: {e}")
-    sys.exit(1)
+    # ... (omitted) ...
 
 # Model management is handled by the service now, so no global model variable or load_model function is needed.
 
@@ -52,23 +41,28 @@ def handler(job):
         log.info(f"Received text length: {len(text)} characters.")
         log.info(f"TTS request initiated for voice={voice_name} speed={speed}")
 
-        # --- USE THE CORRECT SERVICE FOR LONG FORM ---
+        # --- USE THE CORRECT SERVICE FOR LONG FORM AND ADD WRITER FIX ---
         from api.src.services.tts_service import TTSService
+        from api.src.services.streaming_audio_writer import StreamingAudioWriter
         
         # Instantiate the service directly.
-        tts_service = TTSService()
+        # We must await the 'create' method first to initialize managers
+        initialized_service = asyncio.run(TTSService.create())
+        
+        # Create a dummy writer instance using a temporary file path
+        temp_dir = tempfile.gettempdir()
+        temp_file_path = os.path.join(temp_dir, "temp_audio_output")
+        writer = StreamingAudioWriter(output_path=temp_file_path)
 
         async def generate_audio_stream_long_form_service():
             all_chunks = []
-            # This function uses the repo's built-in logic for smart_split and voice path resolution
-            # We must await the 'create' method first to initialize managers
-            initialized_service = await TTSService.create()
             
             # The generate_audio_stream handles all chunking internally
             async for chunk in initialized_service.generate_audio_stream(
                 text=text, 
                 voice=voice_name, # Pass the name, the service resolves the path
                 speed=speed,
+                writer=writer, # <-- PASS THE DUMMY WRITER INSTANCE HERE
                 output_format=None # None means return raw audio chunks for local assembly
             ):
                 if chunk.audio is not None:
@@ -113,4 +107,5 @@ def handler(job):
 
 print("Starting RunPod serverless worker...")
 runpod.serverless.start({"handler": handler})
+
 
