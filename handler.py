@@ -10,7 +10,7 @@ from pydub import AudioSegment
 import soundfile as sf
 import nest_asyncio
 import re
-import tempfile # Needed to create a temporary directory path
+import tempfile 
 
 nest_asyncio.apply()                     # ← Critical for RunPod
 
@@ -37,8 +37,6 @@ except Exception as e:
     print(f"RUNPOD IMPORT FAILED: {e}")
     sys.exit(1)
 
-# Model management is handled by the service now, so no global model variable or load_model function is needed.
-
 def handler(job):
     print("Handler called")
     log.info("Handler start")
@@ -61,28 +59,24 @@ def handler(job):
         # We must await the 'create' method first to initialize managers
         initialized_service = asyncio.run(TTSService.create())
         
-        # Create a dummy writer instance using a temporary file path
-        temp_dir = tempfile.gettempdir()
-        temp_file_path = os.path.join(temp_dir, "temp_audio_output")
-        writer = StreamingAudioWriter(output_path=temp_file_path)
+        # --- FIX: Initialize the writer WITHOUT the output_path argument ---
+        writer = StreamingAudioWriter()
 
         async def generate_audio_stream_long_form_service():
             all_chunks = []
             
-            # The generate_audio_stream handles all chunking internally
             async for chunk in initialized_service.generate_audio_stream(
                 text=text, 
-                voice=voice_name, # Pass the name, the service resolves the path
+                voice=voice_name, 
                 speed=speed,
-                writer=writer, # <-- PASS THE DUMMY WRITER INSTANCE HERE
-                output_format=None # None means return raw audio chunks for local assembly
+                writer=writer, # This is now the correctly initialized writer
+                output_format=None
             ):
                 if chunk.audio is not None:
                     all_chunks.append(chunk.audio)
             
             if not all_chunks:
                 raise ValueError("No audio generated from the service.")
-            # The service returns float32 audio, convert to int16 for standard WAV/MP3 conversion
             return np.concatenate(all_chunks)
 
         # Call the new async function that uses the service manager
@@ -95,6 +89,7 @@ def handler(job):
             sf.write(wav_io, audio_np, 22050, format='WAV', subtype='PCM_16')
             wav_bytes = wav_io.getvalue()
 
+        # This section converts to MP3 and creates the Base64 string for the playable file
         audio_seg = AudioSegment.from_wav(io.BytesIO(wav_bytes))
         with io.BytesIO() as mp3_io:
             audio_seg.export(mp3_io, format="mp3")
@@ -119,3 +114,4 @@ def handler(job):
 
 print("Starting RunPod serverless worker...")
 runpod.serverless.start({"handler": handler})
+
