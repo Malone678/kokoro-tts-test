@@ -33,7 +33,6 @@ try:
     print("runpod imported successfully")
     log.info("RunPod Logger ready")
 except Exception as e:
-    # This block was empty and causing the error
     print(f"RUNPOD IMPORT FAILED: {e}")
     sys.exit(1)
 
@@ -59,8 +58,9 @@ def handler(job):
         # We must await the 'create' method first to initialize managers
         initialized_service = asyncio.run(TTSService.create())
         
-        # --- FIX: Initialize the writer WITHOUT the output_path argument ---
-        writer = StreamingAudioWriter()
+        # --- FIX: Initialize the writer with the required arguments ---
+        # The internal code uses format="wav" and standard 22050 sample rate
+        writer = StreamingAudioWriter(format="wav", sample_rate=22050)
 
         async def generate_audio_stream_long_form_service():
             all_chunks = []
@@ -83,13 +83,10 @@ def handler(job):
         audio_np = asyncio.run(generate_audio_stream_long_form_service())
         # --- END SERVICE CALL ---
 
-        # The service returns float32 audio, convert to int16 for standard WAV/MP3 conversion
-        # We use soundfile's 'subtype' parameter to control this
         with io.BytesIO() as wav_io:
             sf.write(wav_io, audio_np, 22050, format='WAV', subtype='PCM_16')
             wav_bytes = wav_io.getvalue()
 
-        # This section converts to MP3 and creates the Base64 string for the playable file
         audio_seg = AudioSegment.from_wav(io.BytesIO(wav_bytes))
         with io.BytesIO() as mp3_io:
             audio_seg.export(mp3_io, format="mp3")
@@ -114,4 +111,5 @@ def handler(job):
 
 print("Starting RunPod serverless worker...")
 runpod.serverless.start({"handler": handler})
+
 
