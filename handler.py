@@ -48,7 +48,7 @@ def load_model():
             from api.src.inference.kokoro_v1 import KokoroV1
             model = KokoroV1()
             # ←←← THIS IS THE CORRECT AND ONLY STRING THAT WORKS IN THE BASE IMAGE
-            asyncio.run(model.load_model("v1_0"))
+            asyncio.run(model.load_model("/app/api/src/models/v1_0/kokoro-v1_0.pth"))
             print("Kokoro model loaded successfully!")
             log.info("Model loaded")
         except Exception as e:
