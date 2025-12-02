@@ -11,7 +11,6 @@ import soundfile as sf
 import nest_asyncio
 import re
 import tempfile 
-# Removed the settings import as it caused an error
 
 nest_asyncio.apply()                     # ← Critical for RunPod
 
@@ -58,21 +57,16 @@ def handler(job):
         
         # We must await the 'create' method first to initialize managers
         initialized_service = asyncio.run(TTSService.create())
-
+        
         # --- FIX 1: Initialize the backend first (solves "Backend not initialized") ---
         log.info(f"Initializing backend via service manager...")
-        asyncio.run(initialized_service.model_manager.initialize())
-        log.info(f"Backend initialized.")
-        # --- END FIX 1 ---
-        
-        # --- FIX 2: Pass the absolute model path to the manager's load_model function ---
+        # We manually use the known model path to bypass dynamic path issues
         model_path_abs = "/app/api/src/models/v1_0/kokoro-v1_0.pth"
-        log.info(f"Loading model using absolute path via service manager: {model_path_abs}")
         asyncio.run(initialized_service.model_manager.load_model(model_path_abs))
         log.info(f"Model loaded successfully via service manager using absolute path.")
-        # --- END FIX 2 ---
+        # --- END FIX 1 ---
         
-        # --- FIX 3: Initialize the writer with required arguments ---
+        # --- FIX 2: Initialize the writer with required arguments ---
         writer = StreamingAudioWriter(format="wav", sample_rate=22050)
 
         async def generate_audio_stream_long_form_service():
@@ -83,36 +77,36 @@ def handler(job):
                 voice=voice_name, 
                 speed=speed,
                 writer=writer, 
-                output_format=None
+                output_format=None # None means return raw audio chunks for local assembly
             ):
                 if chunk.audio is not None:
                     all_chunks.append(chunk.audio)
             
             if not all_chunks:
                 raise ValueError("No audio generated from the service.")
+            # The service returns float32 audio, convert to int16 for standard WAV/MP3 conversion
             return np.concatenate(all_chunks)
 
         # Call the new async function that uses the service manager
         audio_np = asyncio.run(generate_audio_stream_long_form_service())
         # --- END SERVICE CALL ---
 
+        # The service returns float32 audio, convert to int16 for standard WAV writing
         with io.BytesIO() as wav_io:
             sf.write(wav_io, audio_np, 22050, format='WAV', subtype='PCM_16')
             wav_bytes = wav_io.getvalue()
 
-        audio_seg = AudioSegment.from_wav(io.BytesIO(wav_bytes))
-        with io.BytesIO() as mp3_io:
-            audio_seg.export(mp3_io, format="mp3")
-            mp3_bytes = mp3_io.getvalue()
+        # --- FIX 3: Encode WAV bytes to Base64 directly, skip MP3 conversion ---
+        audio_b64 = base64.b64encode(wav_bytes).decode()
+        # The output length bytes now reflect the larger WAV file size
+        # --- END FIX 3 ---
 
-        audio_b64 = base64.b64encode(mp3_bytes).decode()
-
-        log.info(f"Generated {len(mp3_bytes)} MP3 bytes — SUCCESS!")
+        log.info(f"Generated {len(wav_bytes)} WAV bytes — SUCCESS!")
         return {
             "output": {
                 "status": "success",
                 "audio_b64": audio_b64,
-                "length_bytes": len(mp3_bytes)
+                "length_bytes": len(wav_bytes)
             }
         }
 
@@ -124,6 +118,7 @@ def handler(job):
 
 print("Starting RunPod serverless worker...")
 runpod.serverless.start({"handler": handler})
+
 
 
 
