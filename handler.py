@@ -11,7 +11,7 @@ import soundfile as sf
 import nest_asyncio
 import re
 import tempfile 
-# from api.src.core.config import settings # Removed this import as it caused an error
+# Removed the settings import as it caused an error
 
 nest_asyncio.apply()                     # ← Critical for RunPod
 
@@ -37,8 +37,6 @@ except Exception as e:
     print(f"RUNPOD IMPORT FAILED: {e}")
     sys.exit(1)
 
-# Model management is handled by the service now, so no global model variable or load_model function is needed.
-
 def handler(job):
     print("Handler called")
     log.info("Handler start")
@@ -60,15 +58,21 @@ def handler(job):
         
         # We must await the 'create' method first to initialize managers
         initialized_service = asyncio.run(TTSService.create())
-        
-        # --- FIX 1: Explicitly load the model using the known name "v1_0" ---
-        model_name = "v1_0" 
-        log.info(f"Loading model '{model_name}' via service manager...")
-        asyncio.run(initialized_service.model_manager.load_model(model_name))
-        log.info(f"Model '{model_name}' loaded successfully via service manager.")
+
+        # --- FIX 1: Initialize the backend first (solves "Backend not initialized") ---
+        log.info(f"Initializing backend via service manager...")
+        asyncio.run(initialized_service.model_manager.initialize())
+        log.info(f"Backend initialized.")
         # --- END FIX 1 ---
         
-        # --- FIX 2: Initialize the writer with required arguments ---
+        # --- FIX 2: Pass the absolute model path to the manager's load_model function ---
+        model_path_abs = "/app/api/src/models/v1_0/kokoro-v1_0.pth"
+        log.info(f"Loading model using absolute path via service manager: {model_path_abs}")
+        asyncio.run(initialized_service.model_manager.load_model(model_path_abs))
+        log.info(f"Model loaded successfully via service manager using absolute path.")
+        # --- END FIX 2 ---
+        
+        # --- FIX 3: Initialize the writer with required arguments ---
         writer = StreamingAudioWriter(format="wav", sample_rate=22050)
 
         async def generate_audio_stream_long_form_service():
@@ -120,6 +124,7 @@ def handler(job):
 
 print("Starting RunPod serverless worker...")
 runpod.serverless.start({"handler": handler})
+
 
 
 
