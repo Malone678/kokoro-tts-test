@@ -68,7 +68,7 @@ async def handler(job):
             return {"error": "No text provided"}
 
         log.info(f"Received text length: {len(text)} characters.")
-        log.info(f"TTS request initiated for voice={voice_name} speed={speed")
+        log.info(f"TTS request initiated for voice={voice_name} speed={speed}")
 
         from api.src.services.streaming_audio_writer import StreamingAudioWriter
         writer = StreamingAudioWriter(format="wav", sample_rate=22050)
