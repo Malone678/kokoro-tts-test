@@ -114,6 +114,8 @@ async def handler(job):
 
         # The output length bytes now reflect the larger WAV file size
         log.info(f"Generated {len(wav_bytes)} WAV bytes — SUCCESS!")
+        log.info(f"audio_b64: {audio_b64}")  # Logs the full base64 to RunPod logs
+        
         return {
             "output": {
                 "status": "success",
