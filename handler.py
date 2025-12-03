@@ -11,11 +11,9 @@ import nest_asyncio
 import re
 import tempfile
 import time                               # ← added
-from datetime import datetime, timedelta  # ← added
-from azure.storage.blob import BlobServiceClient, generate_blob_sas, BlobSasPermissions  # ← added
-
-# pydub not used anymore but kept in case you need it later
-# from pydub import AudioSegment
+from datetime import datetime, timedelta # ← added
+from azure.storage.blob import BlobServiceClient, generate_blob_sas, BlobSasPermissions # ← added
+from pydub import AudioSegment          # ← now used for MP3 conversion
 
 nest_asyncio.apply()
 sys.stdout.reconfigure(line_buffering=True)
@@ -61,7 +59,6 @@ async def handler(job):
     print("Handler called")
     log.info("Handler start")
     await initialize_service_once()
-
     try:
         inp = job["input"]
         text = (inp.get("text") or inp.get("prompt") or "").strip()
@@ -71,7 +68,7 @@ async def handler(job):
             return {"error": "No text provided"}
 
         log.info(f"Received text length: {len(text)} characters.")
-        log.info(f"TTS request initiated for voice={voice_name} speed={speed}")
+        log.info(f"TTS request initiated for voice={voice_name} speed={speed")
 
         from api.src.services.streaming_audio_writer import StreamingAudioWriter
         writer = StreamingAudioWriter(format="wav", sample_rate=22050)
@@ -103,7 +100,7 @@ async def handler(job):
         log.info(f"audio_b64: {audio_b64}")
         # ←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←
 
-        # ─────── SECURE AZURE UPLOAD + PLAYABLE SAS URL ───────
+        # ─────── CONVERT TO MP3 + UPLOAD TO AZURE + PLAYABLE SAS URL ───────
         try:
             AZURE_KEY = os.getenv("AZURE_STORAGE_KEY")
             if not AZURE_KEY:
@@ -111,15 +108,24 @@ async def handler(job):
 
             STORAGE_ACCOUNT = "meditationttsstorage"
             CONTAINER_NAME  = "narration-output"
-            blob_name = f"kokoro_{job.get('id','temp')}_{int(time.time())}.wav"
+
+            # Convert WAV → MP3 in memory (128 kbps = excellent quality, tiny file)
+            wav_io = io.BytesIO(wav_bytes)
+            audio = AudioSegment.from_wav(wav_io)
+            mp3_io = io.BytesIO()
+            audio.export(mp3_io, format="mp3", bitrate="128k")
+            mp3_bytes = mp3_io.getvalue()
+            mp3_size_mb = len(mp3_bytes) / 1024 / 1024
+
+            blob_name = f"kokoro_{job.get('id','temp')}_{int(time.time())}.mp3"
 
             connect_str = f"DefaultEndpointsProtocol=https;AccountName={STORAGE_ACCOUNT};AccountKey={AZURE_KEY};EndpointSuffix=core.windows.net"
             blob_service_client = BlobServiceClient.from_connection_string(connect_str)
             blob_client = blob_service_client.get_blob_client(container=CONTAINER_NAME, blob=blob_name)
 
-            log.info(f"Uploading {len(wav_bytes)} bytes to Azure Blob: {blob_name}")
-            blob_client.upload_blob(wav_bytes, overwrite=True)
-            log.info("Azure upload successful")
+            log.info(f"Uploading {mp3_size_mb:.1f} MB MP3 to Azure Blob: {blob_name}")
+            blob_client.upload_blob(mp3_bytes, overwrite=True)
+            log.info("MP3 upload to Azure successful")
 
             sas_token = generate_blob_sas(
                 account_name=STORAGE_ACCOUNT,
@@ -127,24 +133,25 @@ async def handler(job):
                 blob_name=blob_name,
                 account_key=AZURE_KEY,
                 permission=BlobSasPermissions(read=True),
-                expiry=datetime.utcnow() + timedelta(hours=1)
+                expiry=datetime.utcnow() + timedelta(hours=2)
             )
             sas_url = f"https://{STORAGE_ACCOUNT}.blob.core.windows.net/{CONTAINER_NAME}/{blob_name}?{sas_token}"
 
-            log.info(f"Generated 1-hour playable SAS URL: {sas_url}")
+            log.info(f"Generated 2-hour playable MP3 SAS URL: {sas_url}")
 
             return {
                 "output": {
                     "status": "success",
-                    "playable_url": sas_url,
+                    "playable_url": sas_url,          # ← shows cleanly in PowerShell
                     "file_name": blob_name,
-                    "length_bytes": len(wav_bytes),
-                    "audio_b64": audio_b64  # kept for backward compatibility
+                    "size_mb": round(mp3_size_mb, 1),
+                    "format": "mp3",
+                    "audio_b64": audio_b64            # still here exactly as you wanted
                 }
             }
 
         except Exception as azure_err:
-            log.error(f"Azure upload failed: {str(azure_err)}")
+            log.error(f"Azure/MP3 upload failed: {azure_err}")
             return {
                 "output": {
                     "status": "success (Azure fallback)",
